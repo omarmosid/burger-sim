@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Burger Sandbox</title>
+  </head>
+  <body>
+    <div id="app"></div>
+
+    <div id="hud">
+      <div class="hud-head">
+        <h1>Burger Sandbox</h1>
+        <button id="help-toggle" title="Toggle help">?</button>
+      </div>
+      <p id="live">0 layers · 0.0 cm tall</p>
+      <ul id="help">
+        <li>Click a bin or press <kbd>1</kbd>–<kbd>9</kbd> to drop an ingredient</li>
+        <li>Back shelf extras: <kbd>Shift</kbd> + <kbd>1</kbd>–<kbd>9</kbd></li>
+        <li>Drag an ingredient to move it</li>
+        <li>While dragging: <kbd>scroll</kbd> to lift, <kbd>Q</kbd>/<kbd>E</kbd> to rotate</li>
+        <li>Drag empty space to orbit, scroll to zoom</li>
+        <li><kbd>Z</kbd> undo · <kbd>C</kbd> clear · <kbd>Enter</kbd> serve · <kbd>M</kbd> mute</li>
+      </ul>
+    </div>
+
+    <div id="toast"></div>
+
+    <div id="toolbar">
+      <div id="ingredients"></div>
+      <div class="sep"></div>
+      <div id="actions">
+        <button id="undo">Undo <kbd>Z</kbd></button>
+        <button id="clear">Clear <kbd>C</kbd></button>
+        <button id="serve" class="primary">Serve <kbd>Enter</kbd></button>
+        <button id="mute">Sound: on</button>
+      </div>
+    </div>
+
+    <div id="serve-panel" hidden>
+      <div class="card">
+        <p class="eyebrow">Order up</p>
+        <h2 id="serve-name"></h2>
+        <p id="serve-stars"></p>
+        <p id="serve-verdict"></p>
+        <div id="serve-stats"></div>
+        <div id="serve-layers"></div>
+        <div class="actions">
+          <button id="keep">Keep building <kbd>Esc</kbd></button>
+          <button id="new" class="primary">New burger</button>
+        </div>
+      </div>
+    </div>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
