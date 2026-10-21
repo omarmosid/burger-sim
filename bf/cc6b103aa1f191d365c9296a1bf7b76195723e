@@ -1,0 +1,39 @@
+.gitignore
+  s_22b2391c2452a5::t_f8eca1a9c0c3a8 1-24
+package-lock.json
+  s_22b2391c2452a5::t_a8d89bb8385824 1-844
+package.json
+  s_22b2391c2452a5::t_53a6276d6e2d28 1-18
+public/favicon.svg
+  s_22b2391c2452a5::t_b25ff7c23dbc3e 1
+src/interaction.js
+  s_00591156d370af::t_2bd8c9b614009d 1-184
+src/physics.js
+  s_00591156d370af::t_06bc3d3caa8cec 1-42
+src/scene.js
+  s_00591156d370af::t_e2f455d2dc7269 1-48
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "bfcc6b103aa1f191d365c9296a1bf7b76195723e",
+  "prompts": {},
+  "sessions": {
+    "s_00591156d370af": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_02d23350cffej2r5KXg59Y1ndz",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Omar Mohammad <omarmo@cloudflare.com>"
+    },
+    "s_22b2391c2452a5": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_ea278b028ffeyk1eOt99E9fNYk",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Omar Mohammad <omarmo@cloudflare.com>"
+    }
+  }
+}
