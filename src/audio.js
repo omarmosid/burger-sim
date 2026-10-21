@@ -83,6 +83,56 @@ export const audio = {
     src.start(t);
     src.stop(t + 0.4);
   },
+  splat() {
+    if (!ctx || muted) return;
+    const t = ctx.currentTime;
+    tone('sine', 220, 50, t, 0.6, 0.18);
+    this.squelch();
+  },
+  // Low church-bell "shame" toll: a few inharmonic partials with a long decay.
+  shameBell() {
+    if (!ctx || muted) return;
+    const t = ctx.currentTime;
+    for (const [f, a, d] of [[196, 0.35, 2.2], [392, 0.15, 1.6], [466, 0.1, 1.2], [587, 0.08, 0.9]]) {
+      tone('sine', f, f * 0.995, t, a, d);
+    }
+  },
+  // Wah wah wah waaah.
+  sadTrombone() {
+    if (!ctx || muted) return;
+    const t0 = ctx.currentTime + 0.25;
+    const notes = [[311, 0.38], [294, 0.38], [277, 0.38], [262, 1.2]];
+    let t = t0;
+    for (const [f, d] of notes) {
+      const o = ctx.createOscillator();
+      o.type = 'sawtooth';
+      o.frequency.setValueAtTime(f, t);
+      if (d > 1) {
+        const lfo = ctx.createOscillator();
+        const depth = ctx.createGain();
+        lfo.frequency.value = 6;
+        depth.gain.value = 6;
+        lfo.connect(depth).connect(o.frequency);
+        lfo.start(t);
+        lfo.stop(t + d);
+        o.frequency.linearRampToValueAtTime(f * 0.94, t + d);
+      }
+      const lp = ctx.createBiquadFilter();
+      lp.type = 'lowpass';
+      lp.frequency.setValueAtTime(500, t);
+      lp.frequency.linearRampToValueAtTime(1300, t + 0.08);
+      lp.frequency.linearRampToValueAtTime(600, t + d);
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(0.22, t + 0.04);
+      g.gain.setValueAtTime(0.22, t + d - 0.08);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + d);
+      o.connect(lp).connect(g).connect(master);
+      o.start(t);
+      o.stop(t + d + 0.05);
+      t += d;
+    }
+  },
   whoosh() {
     if (!ctx || muted) return;
     const t = ctx.currentTime;

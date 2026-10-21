@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import * as CANNON from 'cannon-es';
 import { createBody, createMesh } from './ingredients.js';
 import { BOARD } from './kitchen.js';
 import { makeMeltable, updateMelt } from './cheese.js';
@@ -8,16 +9,42 @@ const SPAWN_GAP = 0.45;
 
 const HEAT_DECAY = 1 / 45; // fresh patties stay hot for ~45 s
 const TOPPLE_MIN = 3;
+const WALL_Z = -5; // front face of the back wall
+const WALL_SPLAT_SPEED = 4;
+const STICK_TIME = 3.2; // seconds an ingredient clings to the wall
+const FADE_TIME = 0.6;
+const MAX_STAINS = 40;
 
-export function createGame({ scene, world, audio, fx }) {
+function stainGeometry(r, seed) {
+  const s = new THREE.Shape();
+  const n = 28;
+  for (let i = 0; i <= n; i++) {
+    const a = (i / n) * Math.PI * 2;
+    const k = 1 + 0.18 * Math.sin(a * 3 + seed) + 0.12 * Math.sin(a * 7 + seed * 2) + 0.08 * Math.sin(a * 11);
+    const x = Math.cos(a) * r * k;
+    const y = Math.sin(a) * r * k * 0.85;
+    if (i === 0) s.moveTo(x, y);
+    else s.lineTo(x, y);
+  }
+  return new THREE.ShapeGeometry(s);
+}
+
+export function createGame({ scene, world, audio, fx, wallBody }) {
   const items = [];
   const history = [];
   const listeners = {};
   let dragging = null;
   let clock = 0;
+  let lastDef = null;
 
   const emit = (evt, data) => (listeners[evt] || []).forEach((fn) => fn(data));
   const contactPoint = new THREE.Vector3();
+  const wallHits = [];
+  const stains = [];
+  const stuckQ = new THREE.Quaternion();
+  const twist = new THREE.Quaternion();
+  const X_AXIS = new THREE.Vector3(1, 0, 0);
+  const Y_AXIS = new THREE.Vector3(0, 1, 0);
 
   const onBoard = (item) => {
     const p = item.body.position;
@@ -44,7 +71,9 @@ export function createGame({ scene, world, audio, fx }) {
     const body = createBody(def);
     body.position.set(x, y, z);
     body.quaternion.setFromEuler(0, yaw, 0);
-    const item = { def, mesh, body, squashAmp: 0, squashT: 0, lastHit: -1, born: clock, steamAcc: 0 };
+    const item = {
+      def, mesh, body, squashAmp: 0, squashT: 0, lastHit: -1, born: clock, steamAcc: 0, flat: 1, fade: 1,
+    };
     if (def.sizzle) item.heat = 1;
     mesh.userData.item = item;
     if (def.id === 'cheese') makeMeltable(item);
@@ -53,6 +82,14 @@ export function createGame({ scene, world, audio, fx }) {
 
     body.addEventListener('collide', (e) => {
       const v = Math.abs(e.contact.getImpactVelocityAlongNormal());
+      if (item.stuck) return;
+      if (e.body === wallBody && v > WALL_SPLAT_SPEED && !item.wasted) {
+        // Can't change body type mid-step; handle it in update().
+        item.wasted = true;
+        wallHits.push({ item, v });
+        return;
+      }
+      body.thrown = false;
       if (v < 1.0 || clock - item.lastHit < 0.12) return;
       item.lastHit = clock;
       item.squashAmp = Math.min(1, v / 6);
@@ -88,11 +125,83 @@ export function createGame({ scene, world, audio, fx }) {
     emit('remove', item);
   }
 
+  function addStain(def, x, y) {
+    const r = 0.45 + Math.random() * 0.3;
+    const mat = new THREE.MeshStandardMaterial({
+      color: def.stain || def.color,
+      roughness: 0.25,
+      transparent: true,
+      opacity: 0.8,
+      depthWrite: false,
+      polygonOffset: true,
+      polygonOffsetFactor: -2,
+    });
+    const g = new THREE.Group();
+    g.add(new THREE.Mesh(stainGeometry(r, Math.random() * 10), mat));
+    const drips = [];
+    const nd = 2 + Math.floor(Math.random() * 3);
+    for (let i = 0; i < nd; i++) {
+      const w = 0.04 + Math.random() * 0.05;
+      const geo = new THREE.PlaneGeometry(w, 1).translate(0, -0.5, 0);
+      const d = new THREE.Mesh(geo, mat);
+      d.position.set((Math.random() - 0.5) * r * 1.4, -r * 0.5, 0);
+      d.scale.y = 0.001;
+      d.userData.len = 0.3 + Math.random() * 0.9;
+      d.userData.speed = 0.15 + Math.random() * 0.25;
+      g.add(d);
+      drips.push(d);
+    }
+    g.position.set(x, y, WALL_Z + 0.005 + stains.length * 0.0002);
+    g.rotation.z = Math.random() * Math.PI * 2 * 0.05;
+    scene.add(g);
+    stains.push({ group: g, drips, mat });
+    if (stains.length > MAX_STAINS) {
+      const old = stains.shift();
+      scene.remove(old.group);
+    }
+  }
+
+  function clearStains() {
+    for (const s of stains) scene.remove(s.group);
+    stains.length = 0;
+  }
+
+  function splatOnWall({ item, v }) {
+    if (!items.includes(item)) return;
+    const { body, def } = item;
+    body.type = CANNON.Body.KINEMATIC;
+    body.collisionResponse = false;
+    body.allowSleep = false;
+    body.thrown = false;
+    body.wakeUp();
+    const x = THREE.MathUtils.clamp(body.position.x, -7.5, 7.5);
+    const y = Math.max(body.position.y, 1);
+    body.position.set(x, y, WALL_Z + def.halfHeight * 0.5 + 0.02);
+    body.velocity.set(0, -0.12, 0);
+    body.angularVelocity.set(0, 0, 0);
+    // Flat face against the wall, random twist.
+    twist.setFromAxisAngle(Y_AXIS, Math.random() * Math.PI * 2);
+    stuckQ.setFromAxisAngle(X_AXIS, Math.PI / 2).multiply(twist);
+    body.quaternion.set(stuckQ.x, stuckQ.y, stuckQ.z, stuckQ.w);
+    item.stuck = { t: 0 };
+    item.flat = 0.55;
+    item.squashAmp = 1;
+    item.squashT = 0;
+
+    contactPoint.set(x, y, WALL_Z + 0.1);
+    addStain(def, x, y);
+    fx.splat(contactPoint, def.stain || def.color, 26);
+    if (def.crumb) fx.crumbs(contactPoint, def.crumb, 10, 2);
+    fx.shake(Math.min(0.45, 0.15 + v * 0.02));
+    audio.splat?.();
+    emit('waste', { def, where: 'wall', item });
+  }
+
   function detectTopple() {
     let n = 0;
     const center = new THREE.Vector3();
     for (const item of items) {
-      if (item === dragging || clock - item.born < 1) continue;
+      if (item === dragging || clock - item.born < 1 || item.stuck || item.body.thrown) continue;
       const b = item.body;
       if (b.position.y < BOARD.top + 0.4) continue;
       const hSpeed = Math.hypot(b.velocity.x, b.velocity.z);
@@ -127,8 +236,24 @@ export function createGame({ scene, world, audio, fx }) {
       );
       history.push([item]);
       emit('spawn', item);
+      lastDef = def;
       if (def.sizzle) audio.sizzle();
       if (def.squelch) audio.squelch();
+      return item;
+    },
+
+    get lastDef() {
+      return lastDef;
+    },
+
+    // Launch an ingredient with a given velocity. Thrown bodies skip the speed clamp until they hit something.
+    throwItem(def, position, velocity) {
+      const item = addItem(def, position.x, position.y, position.z, Math.random() * Math.PI * 2);
+      item.body.velocity.set(velocity.x, velocity.y, velocity.z);
+      item.body.angularVelocity.set((Math.random() - 0.5) * 12, (Math.random() - 0.5) * 6, (Math.random() - 0.5) * 12);
+      item.body.thrown = true;
+      history.push([item]);
+      audio.whoosh();
       return item;
     },
 
@@ -145,6 +270,7 @@ export function createGame({ scene, world, audio, fx }) {
     },
 
     clear() {
+      clearStains();
       if (!items.length) return;
       [...items].forEach(removeItem);
       history.length = 0;
@@ -153,12 +279,41 @@ export function createGame({ scene, world, audio, fx }) {
 
     update(dt) {
       clock += dt;
+      while (wallHits.length) splatOnWall(wallHits.shift());
+
+      for (const s of stains) {
+        for (const d of s.drips) {
+          if (d.scale.y < d.userData.len) d.scale.y = Math.min(d.userData.len, d.scale.y + dt * d.userData.speed);
+        }
+      }
+
       for (let i = items.length - 1; i >= 0; i--) {
         const item = items[i];
         const { mesh, body } = item;
         if (body.position.y < -5) {
+          if (!item.wasted && item !== dragging) {
+            item.wasted = true;
+            emit('waste', { def: item.def, where: 'floor', item });
+          }
           removeItem(item);
           continue;
+        }
+        // Airborne throws ignore each other (group 2); restore normal collisions once they land.
+        if (body.thrown && body.collisionFilterGroup !== 2) {
+          body.collisionFilterGroup = 2;
+          body.collisionFilterMask = ~2;
+        } else if (!body.thrown && body.collisionFilterGroup === 2) {
+          body.collisionFilterGroup = 1;
+          body.collisionFilterMask = -1;
+        }
+        if (item.stuck) {
+          item.stuck.t += dt;
+          const t = item.stuck.t - STICK_TIME;
+          if (t > 0) item.fade = Math.max(0, 1 - t / FADE_TIME);
+          if (t > FADE_TIME) {
+            removeItem(item);
+            continue;
+          }
         }
         mesh.position.copy(body.position);
         mesh.quaternion.copy(body.quaternion);
@@ -176,10 +331,11 @@ export function createGame({ scene, world, audio, fx }) {
         if (item.squashAmp > 0.01) {
           item.squashT += dt;
           const w = item.squashAmp * Math.exp(-item.squashT * 10) * Math.cos(item.squashT * 32);
-          mesh.scale.set(1 + w * 0.12, 1 - w * 0.3, 1 + w * 0.12);
+          const f = item.fade;
+          mesh.scale.set((1 + w * 0.12) * f, (1 - w * 0.3) * item.flat * f, (1 + w * 0.12) * f);
           if (item.squashT > 0.6) item.squashAmp = 0;
         } else {
-          mesh.scale.set(1, 1, 1);
+          mesh.scale.set(item.fade, item.flat * item.fade, item.fade);
         }
       }
       detectTopple();

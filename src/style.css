@@ -342,3 +342,106 @@ body.slowmo::before,
 body.slowmo::after {
   height: 7vh;
 }
+
+/* Waste tracker in HUD */
+#waste {
+  margin: 4px 0 0;
+  font-size: 13px;
+  font-weight: 700;
+  color: #b3120f;
+}
+
+/* Shame banner */
+#shame {
+  position: fixed;
+  bottom: 118px;
+  left: 50%;
+  z-index: 20;
+  width: min(560px, calc(100vw - 32px));
+  padding: 18px 24px 16px;
+  text-align: center;
+  color: #fff;
+  background: rgba(70, 8, 6, 0.92);
+  border: 3px solid #ff5a4a;
+  border-radius: 18px;
+  box-shadow: 0 20px 60px rgba(70, 8, 6, 0.45);
+  pointer-events: none;
+  opacity: 0;
+  transform: translate(-50%, 12px) scale(0.96);
+  transition: opacity 0.25s, transform 0.25s;
+}
+
+#shame.show {
+  opacity: 1;
+  transform: translate(-50%, 0) scale(1);
+}
+
+#shame .stamp {
+  display: inline-block;
+  padding: 2px 18px;
+  font: 900 44px/1.1 Impact, 'Arial Black', system-ui, sans-serif;
+  letter-spacing: 0.12em;
+  color: #ff5a4a;
+  border: 4px solid #ff5a4a;
+  border-radius: 8px;
+  transform: rotate(-6deg);
+}
+
+#shame.show .stamp {
+  animation: stamp 0.35s cubic-bezier(0.2, 1.6, 0.4, 1);
+}
+
+@keyframes stamp {
+  from {
+    transform: rotate(-6deg) scale(2.6);
+    opacity: 0;
+  }
+}
+
+#shame .rank {
+  margin-top: 10px;
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #ffb3a8;
+}
+
+#shame .line {
+  margin-top: 6px;
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+#shame .stats {
+  margin-top: 8px;
+  font-size: 12px;
+  opacity: 0.75;
+}
+
+#shame.big {
+  border-color: #ffd23f;
+}
+
+#shame.big .stamp {
+  font-size: 60px;
+  color: #ffd23f;
+  border-color: #ffd23f;
+}
+
+#shame.big.show {
+  animation: shame-wobble 0.6s ease 0.3s;
+}
+
+@keyframes shame-wobble {
+  25% {
+    transform: translate(-50%, 0) rotate(-2deg);
+  }
+  50% {
+    transform: translate(-50%, 0) rotate(2deg);
+  }
+  75% {
+    transform: translate(-50%, 0) rotate(-1deg);
+  }
+}

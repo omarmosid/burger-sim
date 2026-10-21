@@ -158,7 +158,7 @@ export function createKitchen(scene, world) {
   wall.position.set(0, 4, -5);
   wall.receiveShadow = true;
   scene.add(wall);
-  addStaticBox(world, [8, 6, 0.2], [0, 6, -5.2]);
+  const wallBody = addStaticBox(world, [8, 6, 0.2], [0, 6, -5.2]);
 
   // Cutting board
   const board = new THREE.Mesh(
@@ -233,6 +233,7 @@ export function createKitchen(scene, world) {
   return {
     bins,
     binGroup,
+    wallBody,
     setHover(index) {
       hovered = index;
     },

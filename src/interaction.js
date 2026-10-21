@@ -1,8 +1,12 @@
 import * as THREE from 'three';
 import * as CANNON from 'cannon-es';
 import { COUNTER } from './kitchen.js';
+import { INGREDIENTS } from './ingredients.js';
 
 const CLICK_SLOP = 6;
+const FLICK_MIN_SPEED = 7; // world units/s of cursor motion to count as a throw
+const THROW_MAX_SPEED = 24;
+const GRAVITY = 20;
 
 export function createInteraction({ camera, canvas, controls, world, game, kitchen, audio, onSpawn }) {
   const raycaster = new THREE.Raycaster();
@@ -19,6 +23,9 @@ export function createInteraction({ camera, canvas, controls, world, game, kitch
   world.addBody(jointBody);
 
   let drag = null;
+  const samples = []; // recent unclamped cursor positions while dragging, for flick throws
+  const wallPlane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 5);
+  const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
   let pendingBin = null;
   let downAt = { x: 0, y: 0 };
   const spin = { q: false, e: false };
@@ -51,6 +58,9 @@ export function createInteraction({ camera, canvas, controls, world, game, kitch
     if (!drag) return;
     plane.constant = -drag.height;
     if (!raycaster.ray.intersectPlane(plane, hit)) return;
+    const now = performance.now();
+    samples.push({ t: now, x: hit.x, z: hit.z });
+    while (samples.length && now - samples[0].t > 120) samples.shift();
     jointBody.position.set(
       THREE.MathUtils.clamp(hit.x, COUNTER.minX + 0.5, COUNTER.maxX - 0.5),
       drag.height,
@@ -73,6 +83,7 @@ export function createInteraction({ camera, canvas, controls, world, game, kitch
     b.linearDamping = 0.4;
     b.angularDamping = 0.9;
     jointBody.position.copy(b.position);
+    samples.length = 0;
     drag.constraint = new CANNON.PointToPointConstraint(b, new CANNON.Vec3(), jointBody, new CANNON.Vec3(), 400);
     world.addConstraint(drag.constraint);
     game.dragging = item;
@@ -82,22 +93,76 @@ export function createInteraction({ camera, canvas, controls, world, game, kitch
     audio.plop(item.def.pitch * 1.5, 0.2);
   }
 
+  function flickVelocity() {
+    if (samples.length < 2) return null;
+    const a = samples[0];
+    const z = samples[samples.length - 1];
+    const dt = (z.t - a.t) / 1000;
+    if (dt < 0.016 || performance.now() - z.t > 80) return null;
+    const v = new THREE.Vector3((z.x - a.x) / dt, 0, (z.z - a.z) / dt);
+    const speed = v.length();
+    if (speed < FLICK_MIN_SPEED) return null;
+    v.multiplyScalar(Math.min(THROW_MAX_SPEED, speed * 1.2) / speed);
+    v.y = 3 + Math.min(speed, 30) * 0.2; // a bit of arc
+    return v;
+  }
+
   function endDrag() {
     if (!drag) return;
     const b = drag.item.body;
     world.removeConstraint(drag.constraint);
     b.allowSleep = true;
     [b.linearDamping, b.angularDamping] = drag.damping;
+    const fling = flickVelocity();
+    if (fling) {
+      b.velocity.set(fling.x, fling.y, fling.z);
+      b.angularVelocity.set((Math.random() - 0.5) * 10, (Math.random() - 0.5) * 6, (Math.random() - 0.5) * 10);
+      b.thrown = true;
+      audio.whoosh();
+    }
+    samples.length = 0;
     game.dragging = null;
     drag = null;
     controls.enabled = true;
     canvas.style.cursor = '';
   }
 
+  // Right-click: hurl food. On a bin -> that ingredient at the wall. Elsewhere -> last used, toward the cursor.
+  function hurl(e) {
+    setRay(e);
+    const p = pick();
+    let def;
+    const target = new THREE.Vector3();
+    if (p.bin !== undefined) {
+      def = INGREDIENTS[p.bin];
+      const bx = kitchen.bins[p.bin].group.position.x;
+      target.set(bx + (Math.random() - 0.5) * 1.5, 2.2 + Math.random() * 2, -5);
+    } else {
+      def = game.lastDef || INGREDIENTS[Math.floor(Math.random() * INGREDIENTS.length)];
+      const onWall = raycaster.ray.intersectPlane(wallPlane, target);
+      if (!onWall || target.y < 0.3 || Math.abs(target.x) > 8) {
+        if (!raycaster.ray.intersectPlane(groundPlane, target)) return;
+      }
+    }
+    const start = camera.position.clone().addScaledVector(raycaster.ray.direction, 5);
+    const t = THREE.MathUtils.clamp(start.distanceTo(target) / 17, 0.45, 1.1);
+    const v = target.clone().sub(start).divideScalar(t);
+    v.y += 0.5 * GRAVITY * t;
+    game.throwItem(def, start, v);
+  }
+
+  canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+
   // Capture phase on window so we run before OrbitControls' canvas listener.
   window.addEventListener(
     'pointerdown',
     (e) => {
+      if (e.target === canvas && e.button === 2) {
+        e.stopPropagation();
+        audio.unlock();
+        if (!drag) hurl(e);
+        return;
+      }
       if (e.target !== canvas || e.button !== 0) return;
       audio.unlock();
       setRay(e);

@@ -9,6 +9,7 @@ import { createInteraction } from './interaction.js';
 import { createUI } from './ui.js';
 import { audio } from './audio.js';
 import { createEffects } from './effects.js';
+import { createShame } from './shame.js';
 
 const { renderer, scene, camera } = createScene(document.getElementById('app'));
 const world = createWorld();
@@ -25,7 +26,9 @@ controls.autoRotateSpeed = 5;
 controls.update();
 
 const fx = createEffects({ scene, camera, renderer, controls, audio });
-const game = createGame({ scene, world, audio, fx });
+const game = createGame({ scene, world, audio, fx, wallBody: kitchen.wallBody });
+const shame = createShame({ audio });
+game.on('waste', (info) => shame.show(info));
 
 let serveTimer = 0;
 
@@ -127,4 +130,4 @@ renderer.setAnimationLoop((now) => {
 });
 
 // Handy for debugging in the console.
-window.burger = { game, world, camera, fx, spawn, serve };
+window.burger = { game, world, camera, fx, shame, spawn, serve };

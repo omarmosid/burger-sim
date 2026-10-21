@@ -21,7 +21,7 @@ export function createWorld() {
   // Clamp speeds so thin ingredients don't tunnel through each other.
   world.addEventListener('postStep', () => {
     for (const body of world.bodies) {
-      if (body.type !== CANNON.Body.DYNAMIC) continue;
+      if (body.type !== CANNON.Body.DYNAMIC || body.thrown) continue;
       const v = body.velocity;
       const speed = v.length();
       if (speed > MAX_SPEED) v.scale(MAX_SPEED / speed, v);

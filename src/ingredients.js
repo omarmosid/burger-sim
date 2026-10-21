@@ -505,7 +505,15 @@ const CRUMBS = {
   bottomBun: '#ecc07a', topBun: '#ecc07a', middleBun: '#ecc07a', patty: '#4a2a18',
   chicken: '#d99a3e', bacon: '#8f3322', onionRings: '#e0a24a', hashBrown: '#d9a24a',
 };
-for (const def of INGREDIENTS) def.crumb = CRUMBS[def.id];
+// Wall stain colours (what the splat looks like, not the swatch).
+const STAINS = {
+  bottomBun: '#e3b26a', topBun: '#e3b26a', middleBun: '#e3b26a', egg: '#ffc21a', onion: '#e6d3e8',
+  tomato: '#d8302f', avocado: '#a9c95a', mushrooms: '#7a5638',
+};
+for (const def of INGREDIENTS) {
+  def.crumb = CRUMBS[def.id];
+  def.stain = STAINS[def.id];
+}
 
 export const ROW_SIZE = 9;
 export const keyLabel = (i) => (i < ROW_SIZE ? `${i + 1}` : `⇧${i - ROW_SIZE + 1}`);
