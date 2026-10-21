@@ -315,3 +315,30 @@ button.primary kbd {
 .actions button {
   flex: 1;
 }
+
+/* Slow-mo letterbox */
+body::before,
+body::after {
+  content: '';
+  position: fixed;
+  left: 0;
+  right: 0;
+  height: 0;
+  background: #120a05;
+  z-index: 5;
+  pointer-events: none;
+  transition: height 0.25s ease;
+}
+
+body::before {
+  top: 0;
+}
+
+body::after {
+  bottom: 0;
+}
+
+body.slowmo::before,
+body.slowmo::after {
+  height: 7vh;
+}

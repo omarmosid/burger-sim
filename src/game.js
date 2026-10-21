@@ -1,15 +1,23 @@
 import * as THREE from 'three';
 import { createBody, createMesh } from './ingredients.js';
 import { BOARD } from './kitchen.js';
+import { makeMeltable, updateMelt } from './cheese.js';
 
 const CM_PER_UNIT = 5;
 const SPAWN_GAP = 0.45;
 
-export function createGame({ scene, world, audio }) {
+const HEAT_DECAY = 1 / 45; // fresh patties stay hot for ~45 s
+const TOPPLE_MIN = 3;
+
+export function createGame({ scene, world, audio, fx }) {
   const items = [];
   const history = [];
+  const listeners = {};
   let dragging = null;
   let clock = 0;
+
+  const emit = (evt, data) => (listeners[evt] || []).forEach((fn) => fn(data));
+  const contactPoint = new THREE.Vector3();
 
   const onBoard = (item) => {
     const p = item.body.position;
@@ -36,8 +44,10 @@ export function createGame({ scene, world, audio }) {
     const body = createBody(def);
     body.position.set(x, y, z);
     body.quaternion.setFromEuler(0, yaw, 0);
-    const item = { def, mesh, body, squashAmp: 0, squashT: 0, lastHit: -1 };
+    const item = { def, mesh, body, squashAmp: 0, squashT: 0, lastHit: -1, born: clock, steamAcc: 0 };
+    if (def.sizzle) item.heat = 1;
     mesh.userData.item = item;
+    if (def.id === 'cheese') makeMeltable(item);
     mesh.position.copy(body.position);
     mesh.quaternion.copy(body.quaternion);
 
@@ -48,6 +58,18 @@ export function createGame({ scene, world, audio }) {
       item.squashAmp = Math.min(1, v / 6);
       item.squashT = 0;
       audio.plop(def.pitch, Math.min(1, v / 7));
+
+      const c = e.contact;
+      const mine = c.bi === body;
+      const ref = mine ? c.bi : c.bj;
+      const r = mine ? c.ri : c.rj;
+      contactPoint.set(ref.position.x + r.x, ref.position.y + r.y, ref.position.z + r.z);
+      if (v > 2.5 && def.crumb) fx.crumbs(contactPoint, def.crumb, Math.min(14, Math.round(v * 1.2)), v * 0.35);
+      if (v > 5) {
+        fx.shake(Math.min(0.6, (v - 5) * 0.08 * Math.sqrt(def.mass)));
+        fx.dust(contactPoint, 6);
+      }
+      emit('impact', { item, v, point: contactPoint.clone() });
     });
 
     scene.add(mesh);
@@ -63,10 +85,30 @@ export function createGame({ scene, world, audio }) {
     scene.remove(item.mesh);
     world.removeBody(item.body);
     for (const other of items) other.body.wakeUp();
+    emit('remove', item);
+  }
+
+  function detectTopple() {
+    let n = 0;
+    const center = new THREE.Vector3();
+    for (const item of items) {
+      if (item === dragging || clock - item.born < 1) continue;
+      const b = item.body;
+      if (b.position.y < BOARD.top + 0.4) continue;
+      const hSpeed = Math.hypot(b.velocity.x, b.velocity.z);
+      if (hSpeed > 1.2 || b.angularVelocity.length() > 4) {
+        n++;
+        center.add(b.position);
+      }
+    }
+    if (n >= TOPPLE_MIN && fx.slowMotion(center.divideScalar(n))) emit('topple', n);
   }
 
   return {
     items,
+    on(evt, fn) {
+      (listeners[evt] ||= []).push(fn);
+    },
     get dragging() {
       return dragging;
     },
@@ -84,6 +126,7 @@ export function createGame({ scene, world, audio }) {
         Math.random() * Math.PI * 2,
       );
       history.push([item]);
+      emit('spawn', item);
       if (def.sizzle) audio.sizzle();
       if (def.squelch) audio.squelch();
       return item;
@@ -120,6 +163,16 @@ export function createGame({ scene, world, audio }) {
         mesh.position.copy(body.position);
         mesh.quaternion.copy(body.quaternion);
 
+        if (item.heat > 0) {
+          item.heat = Math.max(0, item.heat - dt * HEAT_DECAY);
+          item.steamAcc += dt * item.heat * 6;
+          while (item.steamAcc > 1) {
+            item.steamAcc--;
+            fx.steam({ x: body.position.x, y: body.position.y + 0.15, z: body.position.z }, 0.9);
+          }
+        }
+        if (item.melt !== undefined) updateMelt(item, items, dt);
+
         if (item.squashAmp > 0.01) {
           item.squashT += dt;
           const w = item.squashAmp * Math.exp(-item.squashT * 10) * Math.cos(item.squashT * 32);
@@ -129,6 +182,7 @@ export function createGame({ scene, world, audio }) {
           mesh.scale.set(1, 1, 1);
         }
       }
+      detectTopple();
     },
 
     liveStats() {

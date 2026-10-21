@@ -8,12 +8,11 @@ import { createGame } from './game.js';
 import { createInteraction } from './interaction.js';
 import { createUI } from './ui.js';
 import { audio } from './audio.js';
+import { createEffects } from './effects.js';
 
 const { renderer, scene, camera } = createScene(document.getElementById('app'));
 const world = createWorld();
 const kitchen = createKitchen(scene, world);
-const game = createGame({ scene, world, audio });
-
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.target.set(0, 1, 0);
 controls.enableDamping = true;
@@ -24,6 +23,9 @@ controls.minPolarAngle = 0.15;
 controls.maxPolarAngle = Math.PI * 0.47;
 controls.autoRotateSpeed = 5;
 controls.update();
+
+const fx = createEffects({ scene, camera, renderer, controls, audio });
+const game = createGame({ scene, world, audio, fx });
 
 let serveTimer = 0;
 
@@ -100,23 +102,29 @@ window.addEventListener('keydown', (e) => {
 let frame = 0;
 let last = performance.now();
 renderer.setAnimationLoop((now) => {
-  const dt = Math.min((now - last) / 1000, 0.05);
+  const realDt = Math.min((now - last) / 1000, 0.05);
   last = now;
+  // Slow-mo scales the physics step itself, so motion stays smooth instead of stuttering.
+  const ts = fx.timeScale;
+  const dt = realDt * ts;
 
-  interaction.update(dt);
-  world.step(FIXED_STEP, dt, 8);
+  interaction.update(realDt);
+  world.step(FIXED_STEP * ts, dt, 8);
   game.update(dt);
-  kitchen.update(dt);
+  kitchen.update(realDt);
+  fx.update(dt, realDt);
 
   if (serveTimer > 0) {
-    serveTimer -= dt;
+    serveTimer -= realDt;
     if (serveTimer <= 0) controls.autoRotate = false;
   }
-  controls.update(dt);
+  controls.update(realDt);
+  fx.beginShake();
   renderer.render(scene, camera);
+  fx.endShake();
 
   if (frame++ % 10 === 0) ui.setLive(game.liveStats());
 });
 
 // Handy for debugging in the console.
-window.burger = { game, world, camera, spawn, serve };
+window.burger = { game, world, camera, fx, spawn, serve };

@@ -500,6 +500,13 @@ export const INGREDIENTS = [
   },
 ];
 
+// Only crumbly things shed bits; wet/soft ingredients don't.
+const CRUMBS = {
+  bottomBun: '#ecc07a', topBun: '#ecc07a', middleBun: '#ecc07a', patty: '#4a2a18',
+  chicken: '#d99a3e', bacon: '#8f3322', onionRings: '#e0a24a', hashBrown: '#d9a24a',
+};
+for (const def of INGREDIENTS) def.crumb = CRUMBS[def.id];
+
 export const ROW_SIZE = 9;
 export const keyLabel = (i) => (i < ROW_SIZE ? `${i + 1}` : `⇧${i - ROW_SIZE + 1}`);
 
