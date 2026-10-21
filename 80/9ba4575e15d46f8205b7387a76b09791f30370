@@ -1,0 +1,33 @@
+index.html
+  s_22b2391c2452a5::t_679b8cde9b1a58 23
+src/game.js
+  s_22b2391c2452a5::t_979763888b870c 2,12-16,18-32,38,42-47,74-76,85-92,128-199,204,239,245-259,273,282-289,294-297,301-317,334-335,338
+src/ingredients.js
+  s_22b2391c2452a5::t_8724a5ff062622 508-516
+src/interaction.js
+  s_22b2391c2452a5::t_ba8f3f1e6ca2a3 4,7-9,26-28,61-63,86,96-109,116-123,130-155,160-165
+src/kitchen.js
+  s_22b2391c2452a5::t_4b747546277741 161,236
+src/main.js
+  s_22b2391c2452a5::t_658c67c0e39174 12,29-31,133
+src/physics.js
+  s_22b2391c2452a5::t_9b31cb481f104a 24
+src/style.css
+  s_22b2391c2452a5::t_b514a63ea77ac4 345-447
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "809ba4575e15d46f8205b7387a76b09791f30370",
+  "prompts": {},
+  "sessions": {
+    "s_22b2391c2452a5": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_ea278b028ffeyk1eOt99E9fNYk",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Omar Mohammad <omarmo@cloudflare.com>"
+    }
+  }
+}
