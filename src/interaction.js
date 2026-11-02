@@ -1,12 +1,19 @@
 import * as THREE from 'three';
 import * as CANNON from 'cannon-es';
-import { COUNTER } from './kitchen.js';
+import { BOARD, COUNTER } from './kitchen.js';
 import { INGREDIENTS } from './ingredients.js';
 
 const CLICK_SLOP = 6;
-const FLICK_MIN_SPEED = 7; // world units/s of cursor motion to count as a throw
+const FLICK_MIN_SPEED = 5; // world units/s of cursor motion to count as a throw
+const FLICK_WINDOW = 150; // ms of cursor history used to measure a flick
+const FLICK_STALE = 140; // ms you can pause before releasing and still throw
 const THROW_MAX_SPEED = 24;
 const GRAVITY = 20;
+const WALL_Z = -5;
+const PICKUP_HEIGHT = 1.5; // hold height for items pulled out of a bin
+const HOLD_MIN_Z = WALL_Z + 1.3; // keep held food off the wall so a throw registers a fresh impact
+const BOARD_DROP_MARGIN = 0.4;
+const BOARD_FLICK_SPEED = 14; // over the board, only a fast swipe throws; slower releases just place
 
 export function createInteraction({ camera, canvas, controls, world, game, kitchen, audio, onSpawn }) {
   const raycaster = new THREE.Raycaster();
@@ -27,6 +34,7 @@ export function createInteraction({ camera, canvas, controls, world, game, kitch
   const wallPlane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 5);
   const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
   let pendingBin = null;
+  let pendingChip = null;
   let downAt = { x: 0, y: 0 };
   const spin = { q: false, e: false };
 
@@ -54,27 +62,28 @@ export function createInteraction({ camera, canvas, controls, world, game, kitch
     return {};
   }
 
-  function updateTarget() {
+  // `stamp` is the pointer event's own timestamp, so flick speed stays accurate even when frames lag.
+  function updateTarget(stamp = performance.now()) {
     if (!drag) return;
     plane.constant = -drag.height;
     if (!raycaster.ray.intersectPlane(plane, hit)) return;
-    const now = performance.now();
+    const now = stamp;
     samples.push({ t: now, x: hit.x, z: hit.z });
-    while (samples.length && now - samples[0].t > 120) samples.shift();
+    while (samples.length && now - samples[0].t > FLICK_WINDOW) samples.shift();
     jointBody.position.set(
       THREE.MathUtils.clamp(hit.x, COUNTER.minX + 0.5, COUNTER.maxX - 0.5),
       drag.height,
-      THREE.MathUtils.clamp(hit.z, COUNTER.minZ + 0.7, COUNTER.maxZ - 0.3),
+      THREE.MathUtils.clamp(hit.z, HOLD_MIN_Z, COUNTER.maxZ - 0.3),
     );
   }
 
-  function startDrag(item) {
+  function startDrag(item, height) {
     const b = item.body;
     q3.set(b.quaternion.x, b.quaternion.y, b.quaternion.z, b.quaternion.w);
     euler.setFromQuaternion(q3);
     drag = {
       item,
-      height: Math.max(b.position.y + 0.8, 0.9),
+      height: height ?? Math.max(b.position.y + 0.8, 0.9),
       yaw: euler.y,
       damping: [b.linearDamping, b.angularDamping],
     };
@@ -93,27 +102,85 @@ export function createInteraction({ camera, canvas, controls, world, game, kitch
     audio.plop(item.def.pitch * 1.5, 0.2);
   }
 
-  function flickVelocity() {
+  // Pull a new ingredient out of a bin/chip straight into the player's hand.
+  function grabNew(index) {
+    const height = Math.max(PICKUP_HEIGHT, game.stackTopY() + 0.7);
+    plane.constant = -height;
+    if (!raycaster.ray.intersectPlane(plane, hit)) return;
+    hit.x = THREE.MathUtils.clamp(hit.x, COUNTER.minX + 0.5, COUNTER.maxX - 0.5);
+    hit.z = THREE.MathUtils.clamp(hit.z, HOLD_MIN_Z, COUNTER.maxZ - 0.3);
+    const item = game.spawnAt(INGREDIENTS[index], hit);
+    kitchen.pulse(index);
+    startDrag(item, height);
+  }
+
+  // Ballistic velocity from `from` that lands on `target` after `t` seconds.
+  function lob(from, target, t) {
+    const v = target.clone().sub(from).divideScalar(t);
+    v.y += 0.5 * GRAVITY * t;
+    return v;
+  }
+
+  function flickVelocity(releaseAt = performance.now()) {
     if (samples.length < 2) return null;
     const a = samples[0];
     const z = samples[samples.length - 1];
     const dt = (z.t - a.t) / 1000;
-    if (dt < 0.016 || performance.now() - z.t > 80) return null;
-    const v = new THREE.Vector3((z.x - a.x) / dt, 0, (z.z - a.z) / dt);
-    const speed = v.length();
+    if (dt < 0.016 || releaseAt - z.t > FLICK_STALE) return null;
+    const overBoard =
+      Math.abs(z.x) < BOARD.halfX + BOARD_DROP_MARGIN && Math.abs(z.z) < BOARD.halfZ + BOARD_DROP_MARGIN;
+    const vx = (z.x - a.x) / dt;
+    const vz = (z.z - a.z) / dt;
+    const speed = Math.hypot(vx, vz);
     if (speed < FLICK_MIN_SPEED) return null;
-    v.multiplyScalar(Math.min(THROW_MAX_SPEED, speed * 1.2) / speed);
-    v.y = 3 + Math.min(speed, 30) * 0.2; // a bit of arc
-    return v;
+    if (overBoard && speed < BOARD_FLICK_SPEED) return null;
+
+    const from = drag.item.body.position;
+    const dx = vx / speed;
+    const dz = vz / speed;
+    // Aim assist: any flick roughly toward the back arcs into the wall.
+    if (dz < -0.45) {
+      const dist = (from.z - WALL_Z) / -dz;
+      const target = new THREE.Vector3(
+        THREE.MathUtils.clamp(from.x + dx * dist, -7.5, 7.5),
+        THREE.MathUtils.clamp(1.8 + speed * 0.06, 1.8, 4.5),
+        WALL_Z,
+      );
+      const t = THREE.MathUtils.clamp(dist / (8 + speed * 0.8), 0.12, 0.7);
+      return lob(new THREE.Vector3(from.x, from.y, from.z), target, t);
+    }
+    const s = Math.min(THROW_MAX_SPEED, speed * 1.4);
+    return new THREE.Vector3(dx * s, 3 + Math.min(speed, 30) * 0.2, dz * s);
   }
 
-  function endDrag() {
+  // Aimed throw of the held item at whatever is under the cursor (wall first, then floor/counter).
+  function aimedVelocity() {
+    const from = drag.item.body.position;
+    const target = new THREE.Vector3();
+    const onWall = raycaster.ray.intersectPlane(wallPlane, target);
+    if (!onWall || target.y < 0.3 || Math.abs(target.x) > 8) {
+      if (!raycaster.ray.intersectPlane(groundPlane, target)) return null;
+    }
+    target.y = Math.min(target.y, 6);
+    const start = new THREE.Vector3(from.x, from.y, from.z);
+    // Short throws go fast and flat; long ones get a bit more arc.
+    const t = THREE.MathUtils.clamp(start.distanceTo(target) / 14, 0.12, 0.8);
+    return lob(start, target, t);
+  }
+
+  function throwHeld() {
+    if (!drag) return;
+    const v = aimedVelocity();
+    endDrag(v);
+  }
+
+  function endDrag(forced, releaseAt) {
     if (!drag) return;
     const b = drag.item.body;
     world.removeConstraint(drag.constraint);
     b.allowSleep = true;
     [b.linearDamping, b.angularDamping] = drag.damping;
-    const fling = flickVelocity();
+    const fling = forced instanceof THREE.Vector3 ? forced : flickVelocity(releaseAt);
     if (fling) {
       b.velocity.set(fling.x, fling.y, fling.z);
       b.angularVelocity.set((Math.random() - 0.5) * 10, (Math.random() - 0.5) * 6, (Math.random() - 0.5) * 10);
@@ -153,22 +220,41 @@ export function createInteraction({ camera, canvas, controls, world, game, kitch
 
   canvas.addEventListener('contextmenu', (e) => e.preventDefault());
 
+  // Right-click uses mousedown: when the left button is already held (dragging),
+  // browsers send no pointerdown for the second button, only mousedown.
+  window.addEventListener('mousedown', (e) => {
+    if (e.button !== 2 || e.target !== canvas) return;
+    audio.unlock();
+    setRay(e);
+    if (drag) throwHeld();
+    else hurl(e);
+  });
+
   // Capture phase on window so we run before OrbitControls' canvas listener.
   window.addEventListener(
     'pointerdown',
     (e) => {
       if (e.target === canvas && e.button === 2) {
+        // Keep OrbitControls out of it; the throw itself happens on mousedown below.
         e.stopPropagation();
-        audio.unlock();
-        if (!drag) hurl(e);
         return;
       }
-      if (e.target !== canvas || e.button !== 0) return;
+      if (e.button !== 0) return;
+      const chip = e.target.closest?.('.chip[data-index]');
+      if (chip) {
+        audio.unlock();
+        pendingChip = Number(chip.dataset.index);
+        downAt = { x: e.clientX, y: e.clientY };
+        return;
+      }
+      if (e.target !== canvas) return;
       audio.unlock();
       setRay(e);
       const p = pick();
       if (p.item) startDrag(p.item);
       else if (p.bin !== undefined) {
+        // Claim the press so OrbitControls doesn't rotate while pulling from a bin.
+        e.stopPropagation();
         pendingBin = p.bin;
         downAt = { x: e.clientX, y: e.clientY };
       }
@@ -177,9 +263,22 @@ export function createInteraction({ camera, canvas, controls, world, game, kitch
   );
 
   window.addEventListener('pointermove', (e) => {
+    const moved = Math.hypot(e.clientX - downAt.x, e.clientY - downAt.y);
+    if (pendingBin !== null && moved >= CLICK_SLOP) {
+      setRay(e);
+      grabNew(pendingBin);
+      pendingBin = null;
+    }
+    // Chips: start holding once the cursor reaches the 3D view.
+    if (pendingChip !== null && moved >= CLICK_SLOP && e.target === canvas) {
+      setRay(e);
+      grabNew(pendingChip);
+      pendingChip = null;
+    }
+    if (pendingChip !== null) canvas.style.cursor = 'grabbing';
     if (drag) {
       setRay(e);
-      updateTarget();
+      updateTarget(e.timeStamp);
       return;
     }
     if (e.target !== canvas || e.buttons) {
@@ -193,8 +292,9 @@ export function createInteraction({ camera, canvas, controls, world, game, kitch
   });
 
   window.addEventListener('pointerup', (e) => {
+    pendingChip = null;
     if (drag) {
-      endDrag();
+      endDrag(null, e.timeStamp);
       return;
     }
     if (pendingBin !== null) {
@@ -221,6 +321,10 @@ export function createInteraction({ camera, canvas, controls, world, game, kitch
   window.addEventListener('keydown', (e) => {
     const k = e.key.toLowerCase();
     if (k in spin) spin[k] = true;
+    if (e.code === 'Space' && drag) {
+      e.preventDefault();
+      throwHeld();
+    }
   });
   window.addEventListener('keyup', (e) => {
     const k = e.key.toLowerCase();

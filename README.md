@@ -25,10 +25,12 @@ Open the URL Vite prints (default http://localhost:5173).
 | ----------------------------------- | ----------------------------------------- |
 | Click a bin, or `1`–`9`             | Drop a front-row ingredient on the stack  |
 | `Shift` + `1`–`9`                   | Drop a back-shelf ingredient              |
+| Drag out of a bin or toolbar chip   | Pick up a new ingredient and place it     |
 | Drag an ingredient                  | Move it                                   |
 | Scroll while dragging               | Lift or lower it                          |
 | `Q` / `E` while dragging            | Rotate it                                 |
-| Flick and release while dragging    | Throw it                                  |
+| Flick toward the wall and release   | Throw it (aim assist steers it at the wall) |
+| `Space` or right-click while holding | Throw it where the cursor points         |
 | Right-click a bin                   | Hurl that ingredient at the wall          |
 | Right-click elsewhere               | Hurl the last ingredient at that spot     |
 | Drag empty space / scroll           | Orbit / zoom the camera                   |

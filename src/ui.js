@@ -7,6 +7,7 @@ export function createUI(handlers) {
   INGREDIENTS.forEach((def, i) => {
     const btn = document.createElement('button');
     btn.className = 'chip';
+    btn.dataset.index = i;
     btn.title = `${def.name} (${keyLabel(i).replace('⇧', 'Shift+')})`;
     btn.innerHTML = `<span class="dot" style="background:${def.color}"></span><kbd>${keyLabel(i)}</kbd><span class="name">${def.name}</span>`;
     btn.addEventListener('click', () => handlers.onSpawn(i));

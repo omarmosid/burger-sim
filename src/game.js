@@ -83,7 +83,8 @@ export function createGame({ scene, world, audio, fx, wallBody }) {
     body.addEventListener('collide', (e) => {
       const v = Math.abs(e.contact.getImpactVelocityAlongNormal());
       if (item.stuck) return;
-      if (e.body === wallBody && v > WALL_SPLAT_SPEED && !item.wasted) {
+      // Anything deliberately thrown splats on the wall, however softly it arrives.
+      if (e.body === wallBody && (v > WALL_SPLAT_SPEED || body.thrown) && !item.wasted) {
         // Can't change body type mid-step; handle it in update().
         item.wasted = true;
         wallHits.push({ item, v });
@@ -175,7 +176,7 @@ export function createGame({ scene, world, audio, fx, wallBody }) {
     body.thrown = false;
     body.wakeUp();
     const x = THREE.MathUtils.clamp(body.position.x, -7.5, 7.5);
-    const y = Math.max(body.position.y, 1);
+    const y = THREE.MathUtils.clamp(body.position.y, 1, 6);
     body.position.set(x, y, WALL_Z + def.halfHeight * 0.5 + 0.02);
     body.velocity.set(0, -0.12, 0);
     body.angularVelocity.set(0, 0, 0);
@@ -244,6 +245,21 @@ export function createGame({ scene, world, audio, fx, wallBody }) {
 
     get lastDef() {
       return lastDef;
+    },
+
+    stackTopY() {
+      return stackTop().y;
+    },
+
+    // Spawn at an exact point (used when dragging out of a bin).
+    spawnAt(def, position) {
+      const item = addItem(def, position.x, position.y, position.z, Math.random() * Math.PI * 2);
+      history.push([item]);
+      emit('spawn', item);
+      lastDef = def;
+      if (def.sizzle) audio.sizzle();
+      if (def.squelch) audio.squelch();
+      return item;
     },
 
     // Launch an ingredient with a given velocity. Thrown bodies skip the speed clamp until they hit something.
