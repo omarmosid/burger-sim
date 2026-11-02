@@ -58,6 +58,8 @@ Modules are factory functions (`createX(deps)`) that return a small API object. 
 - **Mesh templates are cached and cloned** in `createMesh()`. Clones share geometry and materials. If you deform or recolour a single instance, clone its geometry/material first (see `makeMeltable`).
 - **Camera shake** is applied around the render call only, so it never accumulates into `OrbitControls` state.
 - **Pointer handling:** the `pointerdown` listener runs on `window` in the capture phase so it can claim a click before `OrbitControls` does.
+- **Right-click throws use `mousedown`, not `pointerdown`.** Browsers don't fire `pointerdown` for a second button pressed while the first is held (chorded press), which is exactly the "hold food, right-click to throw" case.
+- **Flick speed** is measured with `event.timeStamp`, not `performance.now()`, so slow frames don't distort it. Releasing over the board only throws above `BOARD_FLICK_SPEED`; slower releases place the food.
 - **Buttons** call `preventDefault()` on `pointerdown` so they never take focus; otherwise `Enter` would trigger both the button and the serve shortcut.
 
 ## Verifying changes
